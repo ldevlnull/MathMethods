@@ -1,89 +1,105 @@
 #include <stdio.h>
-#include <math.h>
+#include "math.h"
 
-static int n = 0;
+const static double LEFT = 0;
+const static double RIGHT = 5;
+const static int INIT_N = 10;
+const static int SCALE = 20;
 
-const char* FILE_INPUT_PATH = "input.txt";
-const char* FILE_OUTPUT_PATH = "output.txt";
-const static char* FILE_FORMAT = "%lf\t%lf\n";
+const static char* FILE_INPUT_PATH = "input.txt";
+const static char* FILE_OUTPUT_PATH = "output.txt";
+const static char* FILE_OUTPUT_WKX_PATH = "output_wkx.txt";
+const static char* FILE_OUTPUT_ERROR_PATH = "output_error.txt";
+const static char* FILE_FORMAT = "%le\t%le\n";
 
 double f(double x){
-    return 2*sin(x/3);
+    return sin(x);
 }
 
-void saveInFile() {
-    FILE *fp = fopen(FILE_INPUT_PATH, "w+");
-    for (double x = 0; x <= 30; x+=1) {
-        fprintf(fp, FILE_FORMAT, x, f(x));
-    }
-    fclose(fp);
-}
-
-void countNodes() {
-    FILE *fp = fopen(FILE_INPUT_PATH, "r");
+int countNodes() {
+    FILE *input = fopen(FILE_INPUT_PATH, "r");
     char ch;
-    while ((ch = fgetc(fp)) != EOF)
+    int n = 0;
+    while ((ch = fgetc(input)) != EOF)
         if (ch == '\n')
             n++;
-    fclose(fp);
+    fclose(input);
+    return n;
 }
 
 void readNodes(double *x, double *y){
-    FILE *fp = fopen(FILE_INPUT_PATH, "r");
-    for (int i = 0; i < n; i++) {
-        fscanf(fp, FILE_FORMAT, &x[i], &y[i]);
+    FILE *input = fopen(FILE_INPUT_PATH, "rt");
+    int i = 0;
+    while(!feof(input)){
+        fscanf(input, FILE_FORMAT, &x[i], &y[i]);
+        i++;
     }
-    fclose(fp);
+    fclose(input);
 }
 
-double dividedDifferences(double *x, double *y, double k){
+double wkx(int k, double X, double *x){
+    double product = 1;
+    for(int i = 0; i <= k; i++) {
+        product *= (X-x[i]);
+    }
+    return product;
+}
+double dividedDifferences(int k, double *x, double *y){
     double sum = 0;
     for(int i = 0; i <= k; i++){
         double p = 1;
         for(int j = 0; j <= k; j++){
-            if(j!=i){
-                p *= (x[i] - x[j]);
-            }
+            if(j != i)
+                p *= (x[i]-x[j]);
         }
         sum += y[i] / p;
     }
     return sum;
 }
-
-double wkx(double X, double *x, double k){
-    double product = 1;
-    for(int i = 0; i <= k; i++){
-        product *= (X - x[i]);
-    }
-    return product;
-}
-
-double N(double X, double *x, double *y){
+double interpolate(double X, int N, double *x, double *y){
     double sum = y[0];
-    for(int i = 1; i < n-1; i++){
-        sum += wkx(X, x, i-1)*dividedDifferences(x, y, i);
+    int k;
+    for(k = 1; k <= N; k++){
+        sum += wkx(k-1, X, x)*dividedDifferences(k, x, y);
     }
     return sum;
 }
 
-double defineError(double X, double *x, double *y){
-    return fabs(f(X)-N(X, x, y));
+void tabulateInFile(){
+    double step = (RIGHT-LEFT)/INIT_N;
+    double x, y;
+    FILE *input = fopen(FILE_INPUT_PATH, "wt");
+    for(int i = 0; i <= INIT_N; i++){
+        x = LEFT + i*step;
+        y = f(x);
+        fprintf(input, FILE_FORMAT, x, y);
+    }
+    fclose(input);
 }
 
 int main(){
-    saveInFile();
-    countNodes();
-    double x[n], y[n];
+    tabulateInFile();
+    int N = countNodes() - 2;
+    double x[1000], y[1000];
     readNodes(x, y);
-
-    FILE *output = fopen(FILE_OUTPUT_PATH, "w+");
-    fprintf(output, "i\t  x\t\t  N(x)\t\t  y(x)\t\t  eps\n");
-
-    int tabulationAmount = 20;
-    double var_x = x[0], step = (x[n-1]-x[0])/(tabulationAmount*n);
-    for(double i = 0; i <= n*tabulationAmount; i++){
-        fprintf(output, "%i\t%lf\t%lf\t%lf\t%lf\t\n", (int)(i), var_x, N(var_x, x, y), f(var_x), defineError(var_x, x, y));
-        var_x += step;
+    double average_error = 0,
+            X = x[0],
+            step = (x[N]-x[0]) / (SCALE*N);
+    FILE *output, *output_wkx, *output_error;
+    output = fopen(FILE_OUTPUT_PATH, "wt");
+    output_wkx = fopen(FILE_OUTPUT_WKX_PATH, "wt");
+    output_error = fopen(FILE_OUTPUT_ERROR_PATH, "wt");
+    for(int i = 0; i <= SCALE*N; i++){
+        double error = fabs(f(X) - interpolate(X, N, x, y));
+        fprintf(output, "%lf\t%lf\t%lf\n", X, f(X), interpolate(X, N, x, y));
+        fprintf(output_wkx, "%lf\t%.20lf\n", X, wkx(N, X, x));
+        fprintf(output_error, "%lf\t%.15lf\n", X, error);
+        X += step;
+        average_error += error;
     }
+    average_error /= N*SCALE;
+    fprintf(output_error, "average error - %.20lf", average_error);
     fclose(output);
+    fclose(output_wkx);
+    fclose(output_error);
 }
